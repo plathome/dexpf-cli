@@ -17,7 +17,7 @@ mkdir apioperation
 cd apioperation
 ```
 
-本プログラムを bin ディレクトリ内に git clone する
+本プログラムを **binディレクトリ** 内に git clone する
 
 ```
 mkdir bin
@@ -32,14 +32,4 @@ make
 cd ..
 ```
 
-adminユーザーのアカウントファイルを用意する
-
-```
-cat admin.json
-{
-    "username": "admin@iot.example.jp",
-    "password": "5JEHLz9JDIwEHsLeh5Od"
-}
-mkdir -p db/admin
-mv admin.json db/admin/.user.json
-```
+binディレクトリ内にDEXPF.confを用意する
