@@ -1,0 +1,821 @@
+#!/bin/sh
+#
+# $Id: cli4dexpf,v 1.88 2020/09/11 09:01:34 minmin Exp $
+
+# remove Locales for Debian and ...
+#
+unset LC_CTYPE LC_ALL LANG
+
+CURL='curl --silent --include'
+dexpf_conf=DEXPF.conf
+
+#  control files
+#
+USER_JSON=.user.json
+USER_NAME=.name
+TOKEN_JSON=.token.json
+
+#----------------
+
+USER_DOMAIN=iot.example.jp
+
+#
+
+apiVer=/api/v1/		# MUST end with /
+
+__token () {
+	jq -r .token ${prefix}/${1}/${TOKEN_JSON} || exit
+}
+
+__usage () {
+	exec >&2
+	echo Usage: $prognam "$@"
+	exit 2
+}
+
+__error () {
+	exec >&2
+	echo $prognam: Error! "$@"
+	exit 2
+}
+
+__get_userId () {
+	if [ -d ${prefix}/${1} ]; then
+		echo ${1}
+		return
+	fi
+	__dexpf_util_user_id ${1}
+}
+
+__gen_kw () {
+	tr -dc "A-Za-z0-9" </dev/urandom | head -c ${1} 2>/dev/null
+}
+
+__get_http_head () {
+	perl -e 'while (<>) { /^\r$/ && exit; print; }' "$@"
+}
+
+__get_http_body () {
+	perl -e 'while (<>) { /^\r$/ && do { $out = 1; next; }; $out == 1 && print; }' "$@"
+}
+
+__separate_http_head_body () {
+	__get_http_head ${http_resp} > ${http_head}
+	__get_http_body ${http_resp} > ${http_body}
+}
+
+__display_head () {
+	cat ${http_head}
+}
+
+__display_body () {
+	if jq -M . ${http_body} >/dev/null 2>&1 ; then
+		jq -M . ${http_body}
+	else
+		cat ${http_body}
+	fi
+}
+
+__display_response () {
+	[ -z "${i_flag}" ] || {
+		__display_head 
+		echo
+	}
+	[ -z "${s_flag}" ] && __display_body
+}
+
+__save_http_body () {
+	local _path=${prefix}/${1}
+
+	[ ${d_flag} -eq 2 ] && jq -M . ${http_body} >&2		# debug print
+
+	mkdir -p ${_path%/*} || exit
+	cp ${http_body} ${_path} || exit
+	chmod 644 ${_path} || exit
+}
+
+__make_id_dir () {
+	local _path=${prefix}/${1}
+
+	[ ${d_flag} -eq 2 ] && echo ${_path}
+
+	mkdir -p ${_path} || exit
+}
+
+__delete_resource_raw () {
+	mkdir -p ${1%/*}/.OLD || exit
+	mv ${1} ${1%/*}/.OLD || exit
+}
+
+__delete_resource () {
+	__delete_resource_raw ${prefix}/${1}
+}
+
+__check_error_status () {
+	if [ -s "${http_resp}" ]; then
+		local _st=$(head -1 ${http_resp} | cut -d ' ' -f 2)
+
+		case ${_st} in
+		2*)
+			# if [ -s "${http_body}" -a "$(jq .status ${http_body})" != null ] ; then
+			# __display_body
+			# exit 2
+			# fi
+			;;
+		*)
+			cat ${http_resp}
+			exit 2
+			;;
+		esac
+	fi
+}
+
+# ----------------------------------------------------------------------
+
+#  POST
+#
+__do_dexpf_api_post ()
+{
+	local _url=${dexpf_host}${apiVer}${1}
+
+	if [ ${d_flag} -eq 1 ]; then
+		echo API:POST ${_url}
+		echo "${CURL}" '\'
+		echo '    --header "Content-Type: application/json" \'
+		echo '    --data @- \'
+		echo '    '${_url}
+		jq -M .
+		exit
+	fi
+
+	${CURL} \
+		--header "Content-Type: application/json"	\
+		--data @-					\
+		${_url} > ${http_resp}
+
+	__separate_http_head_body
+	__check_error_status
+}
+
+#  POST Auth
+#
+__do_dexpf_api_post_auth ()
+{
+	local _url=${dexpf_host}${apiVer}${1}
+
+	if [ ${d_flag} -eq 1 ]; then
+		echo API:POST ${_url}
+		echo "${CURL}" '\'
+		echo '    --header "Authorization: Bearer ${TOKEN}" \'
+		echo '    --header "Content-Type: application/json" \'
+		echo '    --data @- \'
+		echo '    '${_url}
+		jq -M .
+		exit
+	fi
+
+	local _u=${2}
+	[ ! -z "${user3rd}" ] && _u="${user3rd}"
+
+	${CURL} \
+		--header "Authorization: Bearer $(__token ${_u})"	\
+		--header "Content-Type: application/json"	\
+		--data @-					\
+		${_url} > ${http_resp}
+
+	__separate_http_head_body
+	__check_error_status
+}
+
+#  GET
+#
+__do_dexpf_api_get ()
+{
+	local _url=${dexpf_host}${apiVer}${1}
+
+	if [ ${d_flag} -eq 1 ]; then
+		echo API:GET ${_url}
+		echo "${CURL}" '\'
+		echo '    '${_url}
+		exit
+	fi
+	${CURL} ${_url} > ${http_resp}
+
+	__separate_http_head_body
+	__check_error_status
+}
+
+#  GET Auth
+#
+__do_dexpf_api_get_auth ()
+{
+	local _url=${dexpf_host}${apiVer}${1}
+
+	if [ ${d_flag} -eq 1 ]; then
+		echo API:GET ${_url}
+		echo "${CURL}" '\'
+		echo '    --header "Authorization: Bearer ${TOKEN}" \'
+		echo '    '${_url}
+		exit
+	fi
+
+	local _u=${2}
+	[ ! -z "${user3rd}" ] && _u="${user3rd}"
+
+	${CURL} --header "Authorization: Bearer $(__token ${_u})" ${_url} > ${http_resp}
+
+	__separate_http_head_body
+	__check_error_status
+}
+
+#  DELETE Auth
+#
+__do_dexpf_api_delete_auth ()
+{
+	local _url=${dexpf_host}${apiVer}${1}
+
+	if [ ${d_flag} -eq 1 ]; then
+		echo API:DELETE ${_url}
+		echo "${CURL} --request DELETE" '\'
+		echo '    --header "Authorization: Bearer ${TOKEN}" \'
+		echo '    '${_url}
+		exit
+	fi
+
+	local _u=${2}
+	[ ! -z "${user3rd}" ] && _u="${user3rd}"
+
+	${CURL} --request DELETE \
+		--header "Authorization: Bearer $(__token ${_u})" ${_url} > ${http_resp}
+
+	__separate_http_head_body
+	__check_error_status
+}
+
+#  PUT with Auth
+#
+__do_dexpf_api_put_auth ()
+{
+	local _url=${dexpf_host}${apiVer}${1}
+
+	if [ ${d_flag} -eq 1 ]; then
+		echo API:PUT ${_url}
+		echo "${CURL}" '--request PUT \'
+		echo '    --header "Authorization: Bearer ${TOKEN}" \'
+		echo '    --header "Content-Type: application/json" \'
+		echo '    --data @- \'
+		echo '    '${_url}
+		jq -M .
+		exit
+	fi
+
+	local _u=${2}
+	[ ! -z "${user3rd}" ] && _u="${user3rd}"
+
+	${CURL} --request PUT					\
+		--data @-					\
+		--header "Authorization: Bearer $(__token ${_u})"	\
+		--header "Content-Type: application/json"	\
+		${_url} > ${http_resp}
+
+	__separate_http_head_body
+	__check_error_status
+}
+
+
+# ----------------------------------------------------------------------
+#  No. 30. Version
+__dexpf_api_version () {
+	__do_dexpf_api_get Version
+	__display_response
+}
+
+# ----------------------------------------------------------------------
+#  No. 1. DEXPF Setup
+#
+#  $ admin_setup
+#   input:
+#	admin/user.json
+#
+__dexpf_api_admin_setup () {
+	if [ ! -f ${prefix}/admin/${USER_JSON} ]; then
+		__error "${prefix}/admin/${USER_JSON} not found!"
+	fi
+
+	__do_dexpf_api_post Admin/Setup < ${prefix}/admin/${USER_JSON} || exit
+
+	__save_http_body admin/system.json
+	__display_response
+}
+
+# ----------------------------------------------------------------------
+#  No. 2. Create User
+#
+#  $ user_create <username>
+#   input
+#	username.json:		username & password
+#   result:
+#	userid/user.json:	username.json
+#	userid/name:		username
+#       username->userid:	symbolik link from username->userid
+#
+__dexpf_api_user_create () {
+	if [ -z "${1}" -o ! -f "${1}.json" ]; then
+		__usage "username"
+	fi
+
+	__do_dexpf_api_post_auth Accounts admin < ${1}.json || exit
+
+	local _ownerId=$(jq -r .ownerId ${http_body}) || exit
+
+	[ -d ${prefix}/${_ownerId} ] && __error "userId alredy exist"
+
+	__make_id_dir ${_ownerId}
+	mv ${1}.json ${prefix}/${_ownerId}/${USER_JSON} || exit
+	echo ${1} > ${prefix}/${_ownerId}/${USER_NAME} || exit
+	touch ${prefix}/${_ownerId}/${1} || exit
+
+	__display_response
+}
+
+# ----------------------------------------------------------------------
+#  No. 3. 4.  Get Account Info
+#
+#  $ user_list <username>
+#
+__dexpf_api_user_list () {
+	[ $# -lt 1 ] && __usage "<user> [<userId>]"
+
+	local _u=$(__get_userId ${1})
+
+	if [ -z "${2}" ]; then
+		__do_dexpf_api_get_auth Accounts ${_u}
+	else
+		__do_dexpf_api_get_auth Accounts/${2} ${_u}
+	fi
+	__display_response
+}
+
+# ----------------------------------------------------------------------
+#  No. 5. Delete user
+#
+#  $ user_delete <username>
+#
+__dexpf_api_user_delete () {
+	[ $# -ne 2 ] && __usage "admin <userId>"
+
+	local _u=$(__get_userId ${2})
+
+	__do_dexpf_api_delete_auth Accounts/${_u} ${1}
+	__delete_resource ${_u}
+	__display_response
+}
+
+# ----------------------------------------------------------------------
+#  No. 6. Get App and Dev User Token
+#
+#  $ token_get <username>
+#
+__dexpf_api_token_get () {
+	local _u=$(__get_userId ${1})
+
+	if [ -z "${1}" -o ! -f ${prefix}/${_u}/${USER_JSON} ]; then
+		__error "userId ${1} config error!"
+	fi
+
+	__do_dexpf_api_post Authorizations/Token < ${prefix}/${_u}/${USER_JSON} || exit
+	__save_http_body ${_u}/${TOKEN_JSON}
+	__display_response
+}
+
+# ======================================================================
+#  Device Groups
+# ----------------------------------------------------------------------
+#  No. 22. Create Device Group
+#
+#  $ devgr_create <userId> <devGrId>
+#
+__dexpf_api_devgr_create () {
+	local _u=$(__get_userId ${1})
+
+	[ -z "${2}" -o ! -d ${prefix}/${_u} ] &&
+		__usage userId devgrId
+
+	jo -- -s devGrId=${2} |
+	    __do_dexpf_api_post_auth DeviceGroups "${_u}" || exit
+
+	__display_response
+
+}
+
+#  No. 23. 24. list device group
+#
+#  $ devgr_list <userId> [<devGrId>]
+#
+#
+__dexpf_api_devgr_list () {
+	local _user=$(__get_userId ${1})
+
+	[ -z "${_user}" ] &&
+		__usage "<userId> [<devGrId>]"
+
+	if [ -z "${2}" ]; then
+		__do_dexpf_api_get_auth DeviceGroups "${_user}"
+	else
+		__do_dexpf_api_get_auth DeviceGroups/${2} "${_user}"
+	fi
+
+	__display_response
+}
+
+#  No. 25. Delete device group
+#
+#  $ devgr_delete user devGrId
+#
+__dexpf_api_devgr_delete () {
+	local _user=$(__get_userId ${1})
+
+	[ $# -ne 2 ] && __usage "<user> <devGrId>"
+
+	__do_dexpf_api_delete_auth DeviceGroups/${2} "${_user}"
+
+	__display_response
+}
+
+# ======================================================================
+#  Devices
+# ----------------------------------------------------------------------
+#  No. 26. Register Device
+#
+#  $ dev_register <user> <devGrId> <devId> [<devId> ...]
+#
+__dexpf_api_dev_register () {
+	local _id
+
+	[ $# -lt 3 ] && __usage user devGrId devId
+
+	local _user=$(__get_userId ${1})
+	local _dgid=${2}
+	shift 2
+
+	jo -- -s devGrId=${_dgid} devIds=$(jo -a -- -s $(echo $* | sed 's/ / -s /g')) |
+	    __do_dexpf_api_post_auth Devices "${_user}"
+
+	__display_response
+
+	# mkdir -p ${prefix}/${_user}/${dgpre}${_dgid} || exit
+	# for _id in $* ; do
+	# 	jq '.hostname as $host | 
+	# 		.devices[] | 
+	# 		select (.devId == "'${_id}'") | {
+	# 			devId: .devId,
+	# 			host: $host,
+	# 			hubId: .hubId,
+	# 			key1: .key1,
+	# 			key2: .key2
+	# 		}' ${http_body} > ${prefix}/${_user}/${dgpre}${_dgid}/${dvpre}${_id}.json || exit
+	# done
+}
+
+
+# ----------------------------------------------------------------------
+#  No. 27. 28.List Devices
+#
+#  $ dev_list <userId> [<devGrId>]
+#
+__dexpf_api_dev_list () {
+	local _user=$(__get_userId ${1})
+
+	[ -z "${_user}" ] &&
+		__error "user or tokens"
+
+	if [ -z "${2}" ]; then
+		__do_dexpf_api_get_auth Devices "${_user}"
+	else
+		__do_dexpf_api_get_auth Devices/${2} "${_user}"
+	fi
+
+	__display_response
+}
+
+# ----------------------------------------------------------------------
+#  No. 29. Delete Device
+#
+#  $ dev_delete <userId> <devId>
+#
+__dexpf_api_dev_delete () {
+	local _user=$(__get_userId ${1})
+	local _devId=${2}
+
+	if [ -z "${2}" ]; then
+		__usage user deviceId
+	fi
+
+	__do_dexpf_api_delete_auth Devices/${2} ${_user}
+
+	__display_response
+}
+
+# ======================================================================
+#  App Groups
+# ----------------------------------------------------------------------
+#  No. 8. Register App Group
+#
+#  $ appgr_create <userId> <appGrId>
+#
+__dexpf_api_appgr_create () {
+	local _user=$(__get_userId ${1})
+
+	[ -z "${2}" -o ! -d ${prefix}/${_user} ] &&
+		__usage user appgrId
+
+	jo -- -s appGrId=${2} |
+	    __do_dexpf_api_post_auth AppGroups "${_user}" || exit
+
+	__display_response
+}
+
+#  No. 7. 10. List AppGroups
+#
+#  $ appgr_list <userId> [<appGrId>]
+#
+__dexpf_api_appgr_list () {
+	local _user=$(__get_userId ${1})
+
+	[ -z "${_user}" ] &&
+		__usage "<userId> [<appGrId>]"
+
+	if [ -z "${2}" ]; then
+		__do_dexpf_api_get_auth AppGroups "${_user}"
+	else
+		__do_dexpf_api_get_auth AppGroups/${2} "${_user}"
+	fi
+
+	__display_response
+}
+
+#  No. 9. Delete AppGroups
+#
+#  $ appgr_delete
+#
+__dexpf_api_appgr_delete () {
+	local _user=$(__get_userId ${1})
+
+	[ $# -ne 2 ] && __usage '<user> <appGrId>'
+
+	__do_dexpf_api_delete_auth AppGroups/${2} ${_user}
+
+	__display_response
+}
+
+# ======================================================================
+#  App
+# ----------------------------------------------------------------------
+#  No. 11. App register
+#
+#  $ app_resister iuser appgrid appid <app.json>
+#                   1      2      3     4
+#
+__dexpf_api_app_register () {
+	[ $# -lt 4 ] &&
+		__usage "user appgrid appid <app.json>"
+
+	local _user=$(__get_userId ${1}) _agid=${2} _apid=${3} _app=${4}
+
+	local _dummy=$(jq .url ${_app}) || exit
+	[ "$_dummy" = "null" ] && __errro "bad application"
+	_dummy=$(jq .headers ${_app}) || exit
+	[ "$_dummy" = "null" ] && __errro "bad application"
+
+	__do_dexpf_api_post_auth Apps "${_user}" <<- EOT || exit
+	{
+		"appGrId": "$_agid",
+		"appId": "$_apid",
+		"url": $(jq .url ${_app}),
+		"headers": $(jq .headers ${_app})
+	}
+	EOT
+
+	__display_response
+}
+
+# ----------------------------------------------------------------------
+#  No. 12. 13. App Get (List)
+#
+__dexpf_api_app_list () {
+	[ -z "${1}" ] &&
+		__usage user [ appgrId ]
+
+	local _user=$(__get_userId ${1})
+
+	if [ -z "${2}" ]; then
+		__do_dexpf_api_get_auth Apps "${_user}"
+	else
+		__do_dexpf_api_get_auth Apps/${2} "${_user}"
+	fi
+
+	__display_response
+}
+
+#  No. 14. Delete Apps
+#
+#  $ appgr_delete
+#
+__dexpf_api_app_delete () {
+	[ $# -ne 2 ] && __usage '<user> <appId>'
+
+	local _user=$(__get_userId ${1})
+
+	__do_dexpf_api_delete_auth Apps/${2} ${_user}
+
+	__display_response
+}
+
+
+# ======================================================================
+#  Channels
+# ----------------------------------------------------------------------
+#  No. 15. Create Channel
+#
+__dexpf_api_channel_create () {
+	local _user=$(__get_userId ${1}) _cg=${2}
+
+	[ $# -lt 4 ] &&
+		__usage user grid user grid
+
+	case ${2} in
+	9*)	local _du=$(__get_userId ${1}) _dg=${2} _au=$(__get_userId ${3}) _ag=${4} ;;
+	a*)	local _au=$(__get_userId ${1}) _ag=${2} _du=$(__get_userId ${3}) _dg=${4} ;;
+	*)	_error "bad groupid"
+	esac
+
+	jo -- -s appOwnId=${_au} -s appGrId=${_ag} \
+		-s devOwnId=${_du} -s devGrId=${_dg} |
+	    __do_dexpf_api_post_auth Channels ${_user} || exit
+
+	__display_response
+}
+
+#  No. 17. Enable channel
+#
+#  $ channel_enable user chanid
+#
+__dexpf_api_channel_enable () {
+	local _pre
+	[ $# -lt 2 ] &&
+		__usage user chanelId
+	local _user=$(__get_userId ${1})
+
+	__do_dexpf_api_put_auth Channels/${2} ${_user} < /dev/null || exit
+
+	__display_response
+}
+
+#  No. 16. 19. 20. 21. List Channel
+#
+#  $ channel_enable user chanid
+#
+__dexpf_api_channel_list () {
+	[ $# -lt 1 ] &&
+		__usage "<user> [<chanId> or <devGrId> or <appGrId>]"
+	local _user=$(__get_userId ${1})
+
+	if [ -z "$2" ]; then
+		__do_dexpf_api_get_auth Channels ${_user}
+	else
+		__do_dexpf_api_get_auth Channels/${2} ${_user}
+	fi
+
+	__display_response
+}
+
+#  No. 18. Delete Channel
+#
+__dexpf_api_channel_delete () {
+	[ $# -ne 2 ] && __usage '<user> <chanId>'
+	local _user=$(__get_userId ${1})
+
+	__do_dexpf_api_delete_auth Channels/${2} ${_user}
+
+	__display_response
+}
+
+# =======================================================================
+__dexpf_util_user_list () {
+	local _i _j
+
+	for _i in ${prefix}/*/${USER_NAME}
+	do
+		_j=${_i%/*}
+		echo ${_j#*/}'	'$(cat $_i)'	'$(jq -r .username ${_j}/${USER_JSON})
+	done
+}
+
+__dexpf_util_user_show () {
+	local _u=$(__dexpf_util_user_id ${1}) || exit
+	jq -M . ${prefix}/${_u}/${USER_JSON}
+}
+
+__dexpf_util_user_id () {
+	[ -z "${1}" ] && __usage "username"
+
+	#  called from __get_userId
+	#      double check is over action!!
+	#
+	if [ -d ${prefix}/${1} ] ; then
+		echo ${1}
+		return
+	fi
+
+	local _uid=$(fgrep -x -l ${1} ${prefix}/*/${USER_NAME})
+
+	[ -z "${_uid}" ] && __error "${1}: no such username"
+
+	_uid=${_uid%/*}
+	echo ${_uid#*/}
+}
+
+__dexpf_util_user_tree () {
+	[ -z "${1}" ] && __usage "username"
+
+	local _u=$(__dexpf_util_user_id ${1}) || exit
+
+	[ -z "${_u}" ] && return
+
+	tree ${prefix}/${_u}
+}
+
+__dexpf_util_gen_user_json () {
+	[ -z "${1}" ] && __usage "username"
+
+	jo username=$1@${USER_DOMAIN} password=$(__gen_kw 20) > ${1}.json
+}
+
+__dexpf_util_gen_app_json () {
+	[ -z "${1}" ] && __usage "appname"
+
+	local _app="${app_url}"
+	if [ -z "${_app}" ]; then
+		_app=http://example.jp/sample-app
+	fi
+	
+	cat <<- EOT > ${1}.json
+	{
+	  "url": "${_app}/${1}",
+	  "headers": [
+	    "Content-Type: application/json",
+	    "Dummy-Header: Appname ${1}"
+	  ]
+	}
+	EOT
+}
+
+# =======================================================================
+#  Main
+#
+
+prognam=${0##*/}
+api_name=$(echo ${prognam#*-} | sed -e s/-/_/g )
+res_name=$(echo ${0##*/} | sed 's/dexpf-/res-/')
+
+d_flag=0
+
+prefix=${prefix:-$PWD}
+
+while getopts iDvc:d:u: cmd_arg
+do
+	case "${cmd_arg}" in
+	i)	i_flag=YES ;;
+	D)	d_flag=$((d_flag + 1)) ;;
+	v)	v_flag=YES ;;
+	c)	dexpf_conf=${OPTARG} ;;
+	d)	prefix=${OPTARG} ;;
+	u)	u_flag=${OPTARG} ;;
+	*)	__usage "no such options";;
+	esac
+done
+
+shift $(($OPTIND - 1))
+
+
+# read config
+#
+if [ -f ${0%/*}/${dexpf_conf} ]; then
+	. ${0%/*}/${dexpf_conf}
+else
+	__usage "no '${dexpf_conf}' file"
+fi
+
+if [ ! -z "${u_flag}" ] ; then
+	user3rd=$(__get_userId ${u_flag})
+fi
+
+http_resp=$(mktemp /tmp/dexpfcli-respXXXXXXXXXXX)
+http_body=$(mktemp /tmp/dexpfcli-bodyXXXXXXXXXXX)
+http_head=$(mktemp /tmp/dexpfcli-headXXXXXXXXXXX)
+
+trap "rm -f ${http_resp} ${http_body} ${http_head}; exit" 0 1 2 3 5 15
+
+ __dexpf_${api_name} "$@"
+
+rm -f ${http_resp} ${http_body} ${http_head}
