@@ -27,10 +27,10 @@ DEV_ID=.devId
 APPGR_ID=.appGrId
 APP_ID=.appId
 # IDs
-MIN_DEVGR_ID=0x90000001
-MIN_DEV_ID=0x00000001
-MIN_APPGR_ID=0xa0000001
-MIN_APP_ID=0xf0000001
+MIN_DEVGR_ID=90000001
+MIN_DEV_ID=00000001
+MIN_APPGR_ID=a0000001
+MIN_APP_ID=f0000001
 
 #----------------
 
@@ -441,6 +441,27 @@ __dexpf_api_devgr_create () {
 
 }
 
+#
+#  $ devgr_create <userId> <devGrName>
+#
+__dexpf_api_devgr_create_by_name () {
+	local _u=$(__get_userId ${1})
+	local _path=${prefix}/${_u}/${DEVGR_DIR}
+
+	[ -z "${2}" -o ! -d ${prefix}/${_u} ] &&
+		__usage "<userId> <devGrName>"
+
+	_id=`cat ${_path}/${DEVGR_ID}`
+
+	jo -- -s devGrId=${_id} |
+		__do_dexpf_api_post_auth DeviceGroups "${_u}" || exit
+
+	__save_http_body ${_u}/${DEVGR_DIR}/${2}
+	printf '%x\n' $((0x${_id} + 1)) > ${_path}/${DEVGR_ID} || exit
+	__display_response
+
+}
+
 #  No. 23. 24. list device group
 #
 #  $ devgr_list <userId> [<devGrId>]
@@ -472,6 +493,22 @@ __dexpf_api_devgr_delete () {
 
 	__do_dexpf_api_delete_auth DeviceGroups/${2} "${_user}"
 
+	__display_response
+}
+
+#
+#  $ devgr_delete user devGrName
+#
+__dexpf_api_devgr_delete_by_name () {
+	local _user=$(__get_userId ${1})
+	local _path=${prefix}/${_user}/${DEVGR_DIR}
+
+	[ $# -ne 2 ] && __usage "<user> <devGrName>"
+
+	_id=`cat ${_path}/${2} | jq -r .devGrId`
+	__do_dexpf_api_delete_auth DeviceGroups/${_id} "${_user}"
+
+	__delete_resource ${_user}/${DEVGR_DIR}/${2}
 	__display_response
 }
 
