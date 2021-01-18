@@ -15,6 +15,23 @@ USER_JSON=.user.json
 USER_NAME=.name
 TOKEN_JSON=.token.json
 
+# directories
+DEVGR_DIR=.devGr
+DEV_DIR=.dev
+APPGR_DIR=.appGr
+APP_DIR=.app
+CH_DIR=.ch
+# files
+DEVGR_ID=.devGrId
+DEV_ID=.devId
+APPGR_ID=.appGrId
+APP_ID=.appId
+# IDs
+MIN_DEVGR_ID=0x90000001
+MIN_DEV_ID=0x00000001
+MIN_APPGR_ID=0xa0000001
+MIN_APP_ID=0xf0000001
+
 #----------------
 
 USER_DOMAIN=iot.example.jp
@@ -92,6 +109,21 @@ __save_http_body () {
 	mkdir -p ${_path%/*} || exit
 	cp ${http_body} ${_path} || exit
 	chmod 644 ${_path} || exit
+}
+
+__init_id_dir () {
+	local _path=${prefix}/${1}
+
+	mkdir -p ${_path}/${DEVGR_DIR} || exit
+	mkdir -p ${_path}/${DEV_DIR} || exit
+	mkdir -p ${_path}/${APPGR_DIR} || exit
+	mkdir -p ${_path}/${APP_DIR} || exit
+	mkdir -p ${_path}/${CH_DIR} || exit
+
+	echo ${MIN_DEVGR_ID} > ${_path}/${DEVGR_DIR}/${DEVGR_ID} || exit
+	echo ${MIN_DEV_ID} > ${_path}/${DEV_DIR}/${DEV_ID} || exit
+	echo ${MIN_APPGR_ID} > ${_path}/${APPGR_DIR}/${APPGR_ID} || exit
+	echo ${MIN_APP_ID} > ${_path}/${APP_DIR}/${APP_ID} || exit
 }
 
 __make_id_dir () {
@@ -331,6 +363,7 @@ __dexpf_api_user_create () {
 	[ -d ${prefix}/${_ownerId} ] && __error "userId alredy exist"
 
 	__make_id_dir ${_ownerId}
+	__init_id_dir ${_ownerId}
 	mv ${1}.json ${prefix}/${_ownerId}/${USER_JSON} || exit
 	echo ${1} > ${prefix}/${_ownerId}/${USER_NAME} || exit
 	touch ${prefix}/${_ownerId}/${1} || exit
