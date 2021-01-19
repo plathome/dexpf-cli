@@ -547,6 +547,26 @@ __dexpf_api_dev_register () {
 	# done
 }
 
+#
+#  $ dev_register <user> <devGrName> <devName>
+#
+__dexpf_api_dev_register_by_name () {
+	local _user=$(__get_userId ${1})
+	local _path=${prefix}/${_user}/${DEV_DIR}
+
+	[ $# -ne 3 ] && __usage "<user> <devGrName> <devName>"
+
+	local _dgid=`cat ${prefix}/${_user}/${DEVGR_DIR}/${2} | jq -r .devGrId`
+	local _id=`cat ${_path}/${DEV_ID}`
+
+	jo -- -s devGrId=${_dgid} devIds=$(jo -a -- -s $(echo ${_id})) |
+	    __do_dexpf_api_post_auth Devices "${_user}" || exit
+
+	__save_http_body ${_user}/${DEV_DIR}/${3}
+	printf '%08x\n' $((0x${_id} + 1)) > ${_path}/${DEV_ID} || exit
+	__display_response
+}
+
 
 # ----------------------------------------------------------------------
 #  No. 27. 28.List Devices
@@ -583,6 +603,25 @@ __dexpf_api_dev_delete () {
 
 	__do_dexpf_api_delete_auth Devices/${2} ${_user}
 
+	__display_response
+}
+
+#
+#  $ dev_delete <userId> <devName>
+#
+__dexpf_api_dev_delete_by_name () {
+	local _user=$(__get_userId ${1})
+	local _path=${prefix}/${_user}/${DEV_DIR}
+
+	if [ -z "${2}" ]; then
+		__usage "<user> <devName>"
+	fi
+
+	_id=`cat ${_path}/${2} | jq -r .devices[0].devId`
+
+	__do_dexpf_api_delete_auth Devices/${_id} ${_user}
+
+	__delete_resource ${_user}/${DEV_DIR}/${2}
 	__display_response
 }
 
