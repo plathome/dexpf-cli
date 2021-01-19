@@ -965,6 +965,34 @@ __dexpf_util_gen_app_json () {
 	EOT
 }
 
+__dexpf_util_devgr_id () {
+	[ $# -ne 2 ] && __usage "<user> <devGrName>"
+
+	local _user=$(__get_userId ${1})
+	local _path=${prefix}/${_user}/${DEVGR_DIR}/${2}
+
+	if [ -e ${_path} ];  then
+		local _dgid=`cat ${_path} | jq -r .devGrId`
+		echo ${_dgid}
+	else
+		__error "${2}: no such devGrName @${1}"
+	fi
+}
+
+__dexpf_util_appgr_id () {
+	[ $# -ne 2 ] && __usage "<user> <appGrName>"
+
+	local _user=$(__get_userId ${1})
+	local _path=${prefix}/${_user}/${APPGR_DIR}/${2}
+
+	if [ -e ${_path} ];  then
+		local _agid=`cat ${_path} | jq -r .appGrId`
+		echo ${_agid}
+	else
+		__error "${2}: no such appGrName @${1}"
+	fi
+}
+
 # =======================================================================
 #  Main
 #
