@@ -644,6 +644,26 @@ __dexpf_api_appgr_create () {
 	__display_response
 }
 
+#
+#  $ appgr_create <userId> <appGrName>
+#
+__dexpf_api_appgr_create_by_name () {
+	local _user=$(__get_userId ${1})
+	local _path=${prefix}/${_user}/${APPGR_DIR}
+
+	[ -z "${2}" -o ! -d ${prefix}/${_user} ] &&
+		__usage "<user> <appgrName>"
+
+	_id=`cat ${_path}/${APPGR_ID}`
+
+	jo -- -s appGrId=${_id} |
+	    __do_dexpf_api_post_auth AppGroups "${_user}" || exit
+
+	__save_http_body ${_user}/${APPGR_DIR}/${2}
+	printf '%x\n' $((0x${_id} + 1)) > ${_path}/${APPGR_ID} || exit
+	__display_response
+}
+
 #  No. 7. 10. List AppGroups
 #
 #  $ appgr_list <userId> [<appGrId>]
@@ -674,6 +694,22 @@ __dexpf_api_appgr_delete () {
 
 	__do_dexpf_api_delete_auth AppGroups/${2} ${_user}
 
+	__display_response
+}
+
+#
+#  $ appgr_delete <user> <appGrName>
+#
+__dexpf_api_appgr_delete_by_name () {
+	local _user=$(__get_userId ${1})
+	local _path=${prefix}/${_user}/${APPGR_DIR}
+
+	[ $# -ne 2 ] && __usage '<user> <appGrName>'
+
+	_id=`cat ${_path}/${2} | jq -r .appGrId`
+	__do_dexpf_api_delete_auth AppGroups/${_id} ${_user} || exit
+
+	__delete_resource ${_user}/${APPGR_DIR}/${2}
 	__display_response
 }
 
