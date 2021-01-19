@@ -744,6 +744,39 @@ __dexpf_api_app_register () {
 	__display_response
 }
 
+#
+#  $ app_resister user appGrName appName <app.json>
+#
+__dexpf_api_app_register_by_name () {
+	[ $# -lt 4 ] &&
+		__usage "user appGrName appName <app.json>"
+
+	local _user=$(__get_userId ${1})
+	local _app=${4}
+	local _path=${prefix}/${_user}/${APP_DIR}
+
+	local _dummy=$(jq .url ${_app}) || exit
+	[ "$_dummy" = "null" ] && __errro "bad application"
+	_dummy=$(jq .headers ${_app}) || exit
+	[ "$_dummy" = "null" ] && __errro "bad application"
+
+	local _agid=`cat ${prefix}/${_user}/${APPGR_DIR}/${2} | jq -r .appGrId`
+	local _id=`cat ${_path}/${APP_ID}`
+
+	__do_dexpf_api_post_auth Apps "${_user}" <<- EOT || exit
+	{
+		"appGrId": "$_agid",
+		"appId": "$_id",
+		"url": $(jq .url ${_app}),
+		"headers": $(jq .headers ${_app})
+	}
+	EOT
+
+	__save_http_body ${_user}/${APP_DIR}/${3}
+	printf '%08x\n' $((0x${_id} + 1)) > ${_path}/${APP_ID} || exit
+	__display_response
+}
+
 # ----------------------------------------------------------------------
 #  No. 12. 13. App Get (List)
 #
@@ -773,6 +806,23 @@ __dexpf_api_app_delete () {
 
 	__do_dexpf_api_delete_auth Apps/${2} ${_user}
 
+	__display_response
+}
+
+#
+#  $ appgr_delete <user> <appName>
+#
+__dexpf_api_app_delete_by_name () {
+	[ $# -ne 2 ] && __usage '<user> <appName>'
+
+	local _user=$(__get_userId ${1})
+	local _path=${prefix}/${_user}/${APP_DIR}
+
+	_id=`cat ${_path}/${2} | jq -r .appId`
+
+	__do_dexpf_api_delete_auth Apps/${_id} ${_user} || exit
+
+	__delete_resource ${_user}/${APP_DIR}/${2}
 	__display_response
 }
 
