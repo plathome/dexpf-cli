@@ -851,6 +851,29 @@ __dexpf_api_channel_create () {
 	__display_response
 }
 
+#
+#  $ channel_create <user> <grName> <user> <grName> <chName>
+#
+__dexpf_api_channel_create_by_name () {
+	local _user=$(__get_userId ${1})
+
+	[ $# -lt 5 ] &&
+		__usage "<user> <grName> <user> <grName> <chName>"
+
+	case ${2} in
+	9*)	local _du=$(__get_userId ${1}) _dg=$(__dexpf_util_devgr_id ${1} ${2}) _au=$(__get_userId ${3}) _ag=$(__dexpf_util_appgr_id ${3} ${4}) ;;
+	a*)	local _au=$(__get_userId ${1}) _ag=$(__dexpf_util_appgr_id ${1} ${2}) _du=$(__get_userId ${3}) _dg=$(__dexpf_util_devgr_id ${3} ${4}) ;;
+	*)	_error "bad groupid"
+	esac
+
+	jo -- -s appOwnId=${_au} -s appGrId=${_ag} \
+		-s devOwnId=${_du} -s devGrId=${_dg} |
+	    __do_dexpf_api_post_auth Channels ${_user} || exit
+
+	__save_http_body ${_user}/${CH_DIR}/${5}
+	__display_response
+}
+
 #  No. 17. Enable channel
 #
 #  $ channel_enable user chanid
@@ -863,6 +886,23 @@ __dexpf_api_channel_enable () {
 
 	__do_dexpf_api_put_auth Channels/${2} ${_user} < /dev/null || exit
 
+	__display_response
+}
+
+#
+#  $ channel_enable <user> <chName>
+#
+__dexpf_api_channel_enable_by_name () {
+	[ $# -lt 2 ] &&
+		__usage "<user> <chName>"
+
+	local _user=$(__get_userId ${1})
+	local _path=${prefix}/${_user}/${CH_DIR}
+	local _id=`cat ${_path}/${2} | jq -r .chanId`
+
+	__do_dexpf_api_put_auth Channels/${_id} ${_user} < /dev/null || exit
+
+	__save_http_body ${_user}/${CH_DIR}/${2}
 	__display_response
 }
 
@@ -892,6 +932,21 @@ __dexpf_api_channel_delete () {
 
 	__do_dexpf_api_delete_auth Channels/${2} ${_user}
 
+	__display_response
+}
+
+#
+#  $ channel_delete <user> <chName>
+#
+__dexpf_api_channel_delete_by_name () {
+	[ $# -ne 2 ] && __usage '<user> <chName>'
+	local _user=$(__get_userId ${1})
+	local _path=${prefix}/${_user}/${CH_DIR}
+	local _id=`cat ${_path}/${2} | jq -r .chanId`
+
+	__do_dexpf_api_delete_auth Channels/${_id} ${_user}
+
+	__delete_resource ${_user}/${CH_DIR}/${2}
 	__display_response
 }
 
@@ -991,6 +1046,43 @@ __dexpf_util_appgr_id () {
 	else
 		__error "${2}: no such appGrName @${1}"
 	fi
+}
+
+__dexpf_util_user_create () {
+	[ $# -ne 2 ] && __usage "<user> <userId>"
+
+	__make_id_dir ${2}
+	__init_id_dir ${2}
+
+	echo ${1} > ${prefix}/${2}/${USER_NAME} || exit
+	touch ${prefix}/${2}/${1} || exit
+}
+
+__dexpf_util_devgr_create () {
+	[ $# -ne 3 ] && __usage "<user> <devGrName> <devGrId>"
+
+	local _user=$(__get_userId ${1})
+	local _path=${prefix}/${_user}/${DEVGR_DIR}/${2}
+
+	jo devGrId=${3} > ${_path}
+}
+
+__dexpf_util_appgr_create () {
+	[ $# -ne 3 ] && __usage "<user> <appGrName> <appGrId>"
+
+	local _user=$(__get_userId ${1})
+	local _path=${prefix}/${_user}/${APPGR_DIR}/${2}
+
+	jo appGrId=${3} > ${_path}
+}
+
+__dexpf_util_channel_create () {
+	[ $# -ne 3 ] && __usage "<user> <chName> <chId>"
+
+	local _user=$(__get_userId ${1})
+	local _path=${prefix}/${_user}/${CH_DIR}/${2}
+
+	jo chanId=${3} > ${_path}
 }
 
 # =======================================================================
