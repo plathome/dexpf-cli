@@ -1034,6 +1034,20 @@ __dexpf_util_devgr_id () {
 	fi
 }
 
+__dexpf_util_dev_id () {
+	[ $# -ne 2 ] && __usage "<user> <devName>"
+
+	local _user=$(__get_userId ${1})
+	local _path=${prefix}/${_user}/${DEV_DIR}/${2}
+
+	if [ -e ${_path} ];  then
+		local _did=`cat ${_path} | jq -r .devices[0].devId`
+		echo ${_did}
+	else
+		__error "${2}: no such devName @${1}"
+	fi
+}
+
 __dexpf_util_appgr_id () {
 	[ $# -ne 2 ] && __usage "<user> <appGrName>"
 
@@ -1045,6 +1059,20 @@ __dexpf_util_appgr_id () {
 		echo ${_agid}
 	else
 		__error "${2}: no such appGrName @${1}"
+	fi
+}
+
+__dexpf_util_app_id () {
+	[ $# -ne 2 ] && __usage "<user> <appName>"
+
+	local _user=$(__get_userId ${1})
+	local _path=${prefix}/${_user}/${APP_DIR}/${2}
+
+	if [ -e ${_path} ];  then
+		local _aid=`cat ${_path} | jq -r .appId`
+		echo ${_aid}
+	else
+		__error "${2}: no such appName @${1}"
 	fi
 }
 
