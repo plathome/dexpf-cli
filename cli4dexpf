@@ -1001,6 +1001,12 @@ __dexpf_util_gen_user_json () {
 	jo username=$1@${USER_DOMAIN} password=$(__gen_kw 20) > ${1}.json
 }
 
+__dexpf_util_gen_user_json_nomailformat () {
+	[ $# -ne 2 ] && __usage "<name> <username>"
+
+    jo -- -s username=$2 password=$(__gen_kw 20) > ${1}.json
+}
+
 __dexpf_util_gen_app_json () {
 	[ -z "${1}" ] && __usage "appname"
 
@@ -1082,8 +1088,18 @@ __dexpf_util_user_create () {
 	__make_id_dir ${2}
 	__init_id_dir ${2}
 
+	mv ${1}.json ${prefix}/${2}/${USER_JSON} || exit
 	echo ${1} > ${prefix}/${2}/${USER_NAME} || exit
 	touch ${prefix}/${2}/${1} || exit
+}
+
+__dexpf_util_user_delete () {
+	[ $# -ne 1 ] && __usage "<user>"
+
+	local _u=$(__get_userId ${1})
+
+	__delete_resource ${_u}
+	__display_response
 }
 
 __dexpf_util_devgr_create () {
