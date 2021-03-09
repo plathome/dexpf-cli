@@ -1088,7 +1088,7 @@ __dexpf_util_user_create () {
 	__make_id_dir ${2}
 	__init_id_dir ${2}
 
-	mv ${1}.json ${prefix}/${2}/${USER_JSON} || exit
+	mv ${1}.json ${prefix}/${2}/${USER_JSON}
 	echo ${1} > ${prefix}/${2}/${USER_NAME} || exit
 	touch ${prefix}/${2}/${1} || exit
 }
